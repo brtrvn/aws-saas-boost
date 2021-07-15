@@ -524,6 +524,14 @@ public class SettingsServiceDAL {
             }
         }
 
+        NoSqlDatabase noSqlDatabase = null;
+        if (Utils.isNotEmpty(appSettings.get("NO_SQL_DATABASE"))) {
+            noSqlDatabase = NoSqlDatabase.builder()
+                    .noSqlType(appSettings.get("NO_SQL_DATABASE"))
+                    .primaryKey(appSettings.get("NO_SQL_PRIMARY_KEY"))
+                    .build();
+        }
+
         AppConfig appConfig = AppConfig.builder()
                 .name(appSettings.get("APP_NAME"))
                 .domainName(appSettings.get("DOMAIN_NAME"))
@@ -539,6 +547,7 @@ public class SettingsServiceDAL {
                 .instanceType(appSettings.get("CLUSTER_INSTANCE_TYPE"))
                 .database(database)
                 .filesystem(filesystem)
+                .noSqlDatabase(noSqlDatabase)
                 .billing(billingProvider)
                 .build();
         long totalTimeMillis = System.currentTimeMillis() - startTimeMillis;
@@ -717,6 +726,15 @@ public class SettingsServiceDAL {
             settings.add(Setting.builder().name("DB_MASTER_PASSWORD").value(null).readOnly(false).secure(true).build());
             settings.add(Setting.builder().name("DB_PORT").value(null).readOnly(false).build());
             settings.add(Setting.builder().name("DB_BOOTSTRAP_FILE").value(null).readOnly(false).build());
+        }
+
+        NoSqlDatabase noSqlDatabase = appConfig.getNoSqlDatabase();
+        if (noSqlDatabase != null) {
+            settings.add(Setting.builder().name("NO_SQL_DATABASE").value(noSqlDatabase.getNoSqlType()).readOnly(false).build());
+            settings.add(Setting.builder().name("NO_SQL_PRIMARY_KEY").value(noSqlDatabase.getPrimaryKey()).readOnly(false).build());
+        } else {
+            settings.add(Setting.builder().name("NO_SQL_DATABASE").value(null).readOnly(false).build());
+            settings.add(Setting.builder().name("NO_SQL_PRIMARY_KEY").value(null).readOnly(false).build());
         }
 
         BillingProvider billing = appConfig.getBilling();

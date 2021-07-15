@@ -21,21 +21,22 @@ import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 @JsonDeserialize(builder = AppConfig.Builder.class)
 public class AppConfig {
 
-    private String name;
-    private String domainName;
-    private String sslCertArn;
-    private Integer minCount;
-    private Integer maxCount;
-    private ComputeSize computeSize;
-    private Integer defaultCpu;
-    private Integer defaultMemory;
-    private Integer containerPort;
-    private String healthCheckURL;
-    private OperatingSystem operatingSystem;
-    private String instanceType;
-    private SharedFilesystem filesystem;
-    private Database database;
-    private BillingProvider billing;
+    private final String name;
+    private final String domainName;
+    private final String sslCertArn;
+    private final Integer minCount;
+    private final Integer maxCount;
+    private final ComputeSize computeSize;
+    private final Integer defaultCpu;
+    private final Integer defaultMemory;
+    private final Integer containerPort;
+    private final String healthCheckURL;
+    private final OperatingSystem operatingSystem;
+    private final String instanceType;
+    private final SharedFilesystem filesystem;
+    private final Database database;
+    private final BillingProvider billing;
+    private final NoSqlDatabase noSqlDatabase;
 
     private AppConfig(Builder builder) {
         this.name = builder.name;
@@ -53,6 +54,7 @@ public class AppConfig {
         this.filesystem = builder.filesystem;
         this.database = builder.database;
         this.billing = builder.billing;
+        this.noSqlDatabase = builder.noSqlDatabase;
     }
 
     public static Builder builder() {
@@ -139,6 +141,10 @@ public class AppConfig {
         return getDatabase() != null;
     }
 
+    public NoSqlDatabase getNoSqlDatabase() {
+        return noSqlDatabase;
+    }
+
     @JsonPOJOBuilder(withPrefix = "") // setters aren't named with[Property]
     public static final class Builder {
 
@@ -157,6 +163,7 @@ public class AppConfig {
         private SharedFilesystem filesystem;
         private Database database;
         private BillingProvider billing;
+        private NoSqlDatabase noSqlDatabase;
 
         private Builder() {
         }
@@ -274,6 +281,11 @@ public class AppConfig {
 
         public Builder billing(BillingProvider billing) {
             this.billing = billing;
+            return this;
+        }
+
+        public Builder noSqlDatabase(NoSqlDatabase noSqlDatabase) {
+            this.noSqlDatabase = noSqlDatabase;
             return this;
         }
 
