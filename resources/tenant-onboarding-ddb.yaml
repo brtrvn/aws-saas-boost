@@ -18,6 +18,10 @@ Parameters:
   TenantId:
     Description: The GUID for the tenant
     Type: String
+  PartitionKey:
+    Description: The attribute name for the partition key
+    Type: String
+    Default: id
 Resources:
   DynamoDbTable:
     Type: AWS::DynamoDB::Table
@@ -25,10 +29,10 @@ Resources:
       TableName:
         Fn::Join: ['', ['tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
       AttributeDefinitions:
-        - AttributeName: id
+        - AttributeName: !Ref PartitionKey
           AttributeType: S
       KeySchema:
-        - AttributeName: id
+        - AttributeName: !Ref PartitionKey
           KeyType: HASH
       ProvisionedThroughput:
         ReadCapacityUnits: 5
