@@ -58,7 +58,8 @@ public class SettingsService implements RequestHandler<Map<String, Object>, APIG
     final static List<String> REQUIRED_PARAMS = Collections.unmodifiableList(
             Arrays.asList("SAAS_BOOST_BUCKET", "CODE_PIPELINE_BUCKET", "CODE_PIPELINE_ROLE", "ECR_REPO", "ONBOARDING_WORKFLOW",
                     "ONBOARDING_SNS", "ONBOARDING_TEMPLATE", "TRANSIT_GATEWAY", "TRANSIT_GATEWAY_ROUTE_TABLE", "EGRESS_ROUTE_TABLE",
-                    "SAAS_BOOST_ENVIRONMENT", "SAAS_BOOST_STACK", "SAAS_BOOST_LAMBDAS_FOLDER")
+                    "SAAS_BOOST_ENVIRONMENT", "SAAS_BOOST_STACK", "SAAS_BOOST_LAMBDAS_FOLDER", "VERSION", "ALB_ACCESS_LOGS_BUCKET",
+                    "EVENT_BUS", "METRICS_ANALYTICS_DEPLOYED")
     );
     final static List<String> READ_WRITE_PARAMS = Collections.unmodifiableList(
             Arrays.asList("DOMAIN_NAME", "HOSTED_ZONE", "SSL_CERT_ARN","COMPUTE_SIZE", "TASK_CPU", "TASK_MEMORY", "CONTAINER_PORT", "HEALTH_CHECK", "APP_NAME",
@@ -66,13 +67,15 @@ public class SettingsService implements RequestHandler<Map<String, Object>, APIG
                     "DB_VERSION", "DB_PARAM_FAMILY", "DB_INSTANCE_TYPE", "DB_NAME", "DB_HOST", "DB_PORT", "DB_MASTER_USERNAME",
                     "DB_MASTER_PASSWORD", "DB_BOOTSTRAP_FILE", "METRICS_STREAM", "BILLING_API_KEY", "CLUSTER_OS", "CLUSTER_INSTANCE_TYPE",
                     //Added for FSX
+                    "ACTIVE_DIRECTORY_DNS_IPS", "ACTIVE_DIRECTORY_USER", "ACTIVE_DIRECTORY_PASSWORD",
                     "FILE_SYSTEM_TYPE", // EFS or FSX
                     "FSX_STORAGE_GB", // GB 32 to 65,536
                     "FSX_THROUGHPUT_MBS", // MB/s
                     "FSX_BACKUP_RETENTION_DAYS", // 7 to 35
                     "FSX_DAILY_BACKUP_TIME", //HH:MM in UTC
                     "FSX_WEEKLY_MAINTENANCE_TIME",//d:HH:MM in UTC
-                    "FSX_WINDOWS_MOUNT_DRIVE")
+                    "FSX_WINDOWS_MOUNT_DRIVE",
+                    "NO_SQL_DATABASE", "NO_SQL_PRIMARY_KEY")
     );
     final static List<String> TENANT_PARAMS = Collections.unmodifiableList(
             Arrays.asList("DB_HOST", "ALB")
@@ -121,22 +124,30 @@ public class SettingsService implements RequestHandler<Map<String, Object>, APIG
         List<Setting> settings = new ArrayList<>();
         Map<String, String> queryParams = (Map<String, String>) event.get("queryStringParameters");
         Map<String, List<String>> multiValueQueryParams = (Map<String, List<String>>) event.get("multiValueQueryStringParameters");
-        // Only return one set of params
-        if (queryParams != null && queryParams.containsKey("readOnly")) {
-            if (Boolean.valueOf(queryParams.get("readOnly"))) {
-                settings = dal.getImmutableSettings();
-            } else {
-                settings = dal.getMutableSettings();
+
+        try {
+            // Only return one set of params
+            if (queryParams != null && queryParams.containsKey("readOnly")) {
+                if (Boolean.valueOf(queryParams.get("readOnly"))) {
+                    settings = dal.getImmutableSettings();
+                } else {
+                    settings = dal.getMutableSettings();
+                }
             }
-        }
-        // Or, filter to return just a few params (ideally, less than 10)
-        if (multiValueQueryParams != null && multiValueQueryParams.containsKey("setting")) {
-            List<String> namedSettings = multiValueQueryParams.get("setting");
-            settings = dal.getNamedSettings(namedSettings);
-        }
-        // Otherwise, return all params
-        if (settings.isEmpty()) {
-            settings = dal.getAllSettings();
+            // Or, filter to return just a few params (ideally, less than 10)
+            if (multiValueQueryParams != null && multiValueQueryParams.containsKey("setting")) {
+                List<String> namedSettings = multiValueQueryParams.get("setting");
+                settings = dal.getNamedSettings(namedSettings);
+            }
+            // Otherwise, return all params
+            if (settings.isEmpty()) {
+                settings = dal.getAllSettings();
+            }
+        } catch (Exception e) {
+            return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withHeaders(CORS)
+                    .withBody("{\"message\": \"Error retrieving settings.\"}");
         }
 
         long totalTimeMillis = System.currentTimeMillis() - startTimeMillis;

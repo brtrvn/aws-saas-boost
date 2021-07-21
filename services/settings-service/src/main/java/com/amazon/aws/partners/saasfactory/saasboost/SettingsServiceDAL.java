@@ -116,6 +116,8 @@ public class SettingsServiceDAL {
     }
 
     public List<Setting> getMutableSettings() {
+        // TODO Could replace this with a call to getNamedSettings for better
+        // performance, but we'd need to deal with exposing secrets or not
         List<Setting> readWriteSettings = new ArrayList<>();
         for (Setting setting : getAllSettings()) {
             if (SettingsService.READ_WRITE_PARAMS.contains(setting.getName())) {
@@ -126,6 +128,8 @@ public class SettingsServiceDAL {
     }
 
     public List<Setting> getImmutableSettings() {
+        // TODO Could replace this with a call to getNamedSettings for better
+        // performance, but we'd need to deal with exposing secrets or not
         List<Setting> readOnlySettings = new ArrayList<>();
         for (Setting setting : getAllSettings()) {
             if (!SettingsService.READ_WRITE_PARAMS.contains(setting.getName())) {
