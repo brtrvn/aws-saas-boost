@@ -201,6 +201,19 @@ Parameters:
     Description: The Parameter Store string parameter and version containing the certficate ARN to use
     Type: String
     Default: ''
+  UseNoSQL:
+    Description: Deploy the No SQL nested stack?
+    Type: String
+    AllowedValues: [ 'true', 'false' ]
+    Default: 'false'
+  NoSqlEngine:
+    Type: String
+    Description: No SQL engine to use
+    Default: ''
+  NoSqlPrimaryKey:
+    Type: String
+    Description: Primary key field for No SQL engine
+    Default: ''
   ## These params are here to read the image values from the public SSM. Leave the defaults
   WIN2019FULL:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
@@ -224,6 +237,9 @@ Conditions:
   ProvisionFsx: !And
     - !Equals [!Ref UseFSx, 'true']
     - Condition: WindowsOS
+  ProvisionDynamoDB: !And
+    - !Equals [!Ref UseNoSQL, 'true']
+    - !Equals [!Ref NoSqlEngine, 'DynamoDB']
   IsWin2019Full: !Equals [WIN2019FULL, !Ref DockerHostOS]
   IsWin2019Core: !Equals [WIN2019CORE, !Ref DockerHostOS]
   IsWin1909Core: !Equals [WIN1909CORE, !Ref DockerHostOS]
@@ -280,7 +296,6 @@ Resources:
         - Key: Name
           Value:
             Fn::Join: ['', ['sb-pub-az1-tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
-
   SubnetPublicARouteTable:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -496,6 +511,43 @@ Resources:
                   - ssmmessages:OpenControlChannel
                   - ssmmessages:OpenDataChannel
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:ConditionCheckItem
+                  - dynamodb:PartiQL*
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:dynamodb:'
+                      - !Ref AWS::Region
+                      - ':'
+                      - !Ref AWS::AccountId
+                      - ':table/'
+                      - Fn::Join: ['', ['tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:PartiQLSelect
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:dynamodb:'
+                      - !Ref AWS::Region
+                      - ':'
+                      - !Ref AWS::AccountId
+                      - ':table/'
+                      - Fn::Join: ['', ['tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
+                      - '/index/*'
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -530,33 +582,51 @@ Resources:
               awslogs-stream-prefix: ecs
           Environment:
             Fn::If:
-              - ProvisionRDS
-              - - Name: AWS_REGION
-                  Value: !Ref AWS::Region
-                - Name: TENANT_ID
-                  Value: !Ref TenantId
-                - Name: SAAS_BOOST_EVENT_BUS
-                  Value: !Ref EventBus
-                - Name: METRICS_STREAM
-                  Value: !Ref MetricsStream
-                - Name: DB_HOST
+              - ProvisionRDS #Add DB_HOST and DB_NAME to the environment for RDS
+              - - Name: DB_HOST
                   Value: !GetAtt rds.Outputs.RdsEndpoint
                 - Name: DB_NAME
                   Value: !Ref RDSDatabase
-              - - Name: SAAS_BOOST_BUCKET
+                - Name: AWS_REGION
+                  Value: !Ref AWS::Region
+                - Name: TENANT_ID
+                  Value: !Ref TenantId
+                - Name: METRICS_STREAM
+                  Value: !Ref MetricsStream
+                - Name: SAAS_BOOST_BUCKET
                   Value: !Ref SaaSBoostBucket
+              - !If
+                - ProvisionDynamoDB # Add DDB_TABLE to the environment for DynamoDB
+                - - Name: DDB_TABLE
+                    Value: !GetAtt ddb.Outputs.DynamoDbTable
+                  - Name: AWS_REGION
+                    Value: !Ref AWS::Region
+                  - Name: TENANT_ID
+                    Value: !Ref TenantId
+                  - Name: METRICS_STREAM
+                    Value: !Ref MetricsStream
+                  - Name: SAAS_BOOST_BUCKET
+                    Value: !Ref SaaSBoostBucket
+                # Default environment
+                - - Name: AWS_REGION
+                    Value: !Ref AWS::Region
+                  - Name: TENANT_ID
+                    Value: !Ref TenantId
+                  - Name: METRICS_STREAM
+                    Value: !Ref MetricsStream
+                  - Name: SAAS_BOOST_BUCKET
+                    Value: !Ref SaaSBoostBucket
           MountPoints:
-            !If
+            Fn::If:
               - ProvisionEFS
-              -
-                - ContainerPath: !Ref MountPoint
-                  SourceVolume: !GetAtt efs.Outputs.FileSystemId
+              - - ContainerPath: !Ref MountPoint
+                  SourceVolume:
+                    Fn::Join: ['', ['tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
               - !If
                 - ProvisionFsx
-                -
-                #TODO: update to mount mount
-                 - ContainerPath: !Ref MountPoint
-                   SourceVolume: fsxShare
+                - - ContainerPath: !Ref MountPoint
+                    SourceVolume:
+                      Fn::Join: ['', ['tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
                 - !Ref 'AWS::NoValue'
           LinuxParameters:
             Fn::If:
@@ -574,16 +644,17 @@ Resources:
                   ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/saas-boost/${Environment}/DB_PORT
               - !Ref 'AWS::NoValue'
       Volumes:
-        !If
+        Fn::If:
           - ProvisionEFS
-          -
-            - Name: !GetAtt efs.Outputs.FileSystemId
+          - - Name:
+                Fn::Join: ['', ['tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
               EfsVolumeConfiguration:
                 FileSystemId: !GetAtt efs.Outputs.FileSystemId
+                RootDirectory: '/'
           - !If
             - ProvisionFsx
-            -
-              - Name: fsxShare
+            - - Name:
+                  Fn::Join: ['', ['tenant-', !Select [0, !Split ['-', !Ref TenantId]]]]
                 Host:
                   SourcePath: !Sub ${FSxWindowsMountDrive}\
             - !Ref 'AWS::NoValue'
@@ -1279,6 +1350,19 @@ Resources:
         RDSPort: !Ref RDSPort
         RDSDatabase: !Ref RDSDatabase
         RDSBootstrap: !Ref RDSBootstrap
+
+  ddb:
+    Type: AWS::CloudFormation::Stack
+    Condition: ProvisionDynamoDB
+    Metadata:
+      ForceUpdate: !Ref LambdaSourceFolder
+    Properties:
+      TemplateURL: !Sub https://${SaaSBoostBucket}.s3.amazonaws.com/tenant-onboarding-ddb.yaml
+      TimeoutInMinutes: 15
+      Parameters:
+        TenantId: !Ref TenantId
+        PartitionKey: !Ref NoSqlPrimaryKey
+
 Outputs:
   LoadBalancer:
     Description: Full name for this tenant's application load balancer

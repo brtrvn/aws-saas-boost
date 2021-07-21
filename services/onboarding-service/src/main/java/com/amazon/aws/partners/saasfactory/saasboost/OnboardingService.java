@@ -723,6 +723,15 @@ public class OnboardingService implements RequestHandler<Map<String, Object>, AP
                 }
             }
 
+            Boolean enableNoSqlDatabase = Boolean.FALSE;
+            String noSqlEngine = "";
+            String noSqlPrimaryKey = "";
+            if (Utils.isNotBlank(settings.get("NO_SQL_DATABASE"))) {
+                enableNoSqlDatabase = Boolean.TRUE;
+                noSqlEngine = settings.get("NO_SQL_DATABASE");
+                noSqlPrimaryKey = settings.get("NO_SQL_PRIMARY_KEY");
+            }
+
             // If the tenant is being onboarded into a billing plan, we need to send
             // it through so we can configure it with the 3rd party when the stack completes
             String billingPlan = (String) tenant.get("planId");
@@ -759,7 +768,7 @@ public class OnboardingService implements RequestHandler<Map<String, Object>, AP
             }
 
 
-        // CloudFormation won't let you use dashes or underscores in Mapping second level key names
+            // CloudFormation won't let you use dashes or underscores in Mapping second level key names
             // And it won't let you use Fn::Join or Fn::Split in Fn::FindInMap... so we will mangle this
             // parameter before we send it in.
             String clusterOS = settings.get("CLUSTER_OS").replace("_", "");
@@ -816,6 +825,11 @@ public class OnboardingService implements RequestHandler<Map<String, Object>, AP
             templateParameters.add(Parameter.builder().parameterKey("ALBAccessLogsBucket").parameterValue(settings.get("ALB_ACCESS_LOGS_BUCKET")).build());
             templateParameters.add(Parameter.builder().parameterKey("EventBus").parameterValue(settings.get("EVENT_BUS")).build());
             templateParameters.add(Parameter.builder().parameterKey("BillingPlan").parameterValue(billingPlan).build());
+
+            templateParameters.add(Parameter.builder().parameterKey("UseNoSQL").parameterValue(enableNoSqlDatabase.toString()).build());
+            templateParameters.add(Parameter.builder().parameterKey("NoSqlEngine").parameterValue(noSqlEngine).build());
+            templateParameters.add(Parameter.builder().parameterKey("NoSqlPrimaryKey").parameterValue(noSqlPrimaryKey).build());
+
             for (Parameter p : templateParameters) {
                 if (p.parameterValue() == null) {
                     LOGGER.error("OnboardingService::provisionTenant template parameter {} is NULL", p.parameterKey());

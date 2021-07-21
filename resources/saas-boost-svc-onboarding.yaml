@@ -270,6 +270,14 @@ Resources:
                   - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CidrBlockTable}
               - Effect: Allow
                 Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:CreateTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:TagResource
+                Resource:
+                  - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/tenant*
+              - Effect: Allow
+                Action:
                   - states:StartExecution
                 Resource:
                   - !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:sb-${Environment}-onboarding
