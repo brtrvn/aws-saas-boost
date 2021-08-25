@@ -14,68 +14,44 @@
  * limitations under the License.
  */
 
-import React, { Fragment } from "react";
-import { Row, Col, Card, CardBody, CardHeader } from "reactstrap";
+import React from "react";
+import { Row, Col, Card, CardHeader, CardBody } from "reactstrap";
 import {
-  SaasBoostSelect,
   SaasBoostInput,
-  SaasBoostCheckbox
+  SaasBoostCheckbox,
 } from "../components/FormComponents";
 
-export default class NoSqlDatabaseSubform extends React.Component {
-    getEngineOptions() {
-        const options = this.props.noSqlDbOptions?.map((engine) => {
-          return (
-            <option value="DynamoDB" key="DynamoDB">
-              Amazon DynamoDB
-            </option>
-          );
-        });
-        return options;
-      }
-
-    render() {
-        return (
-          <Fragment>
-            <Row>
-              <Col xs={12}>
-                <Card>
-                  <CardHeader>NoSQL Database</CardHeader>
-                  <CardBody>
-                    <SaasBoostCheckbox
-                      name="provisionNoSqlDb"
-                      id="provisionNoSqlDb"
-                      label="Provision a noSQL database for the application"
-                      value={this.props.provisionNoSqlDb}
+export default function NoSqlDatabaseSubform(props) {
+  const { provisionNoSql = false } = props;
+  return (
+    <>
+      <Row>
+        <Col xs={12}>
+          <Card>
+            <CardHeader>No SQL Database</CardHeader>
+            <CardBody>
+              <SaasBoostCheckbox
+                name="provisionNoSql"
+                id="provisionNoSql"
+                label="Configure No SQL Database"
+                value={provisionNoSql}
+              />
+              {provisionNoSql && (
+                <Row>
+                  <Col xl={6}>
+                    <SaasBoostInput
+                      key="noSqlDatabase.primaryKey"
+                      label="Please enter the primary key"
+                      name="noSqlDatabase.primaryKey"
+                      type="text"
                     />
-                    {this.props.provisionNoSqlDb && (
-                      <Row>
-                        <Col xs={12}>
-                          <SaasBoostSelect
-                            label="Engine"
-                            name="noSqlDatabase.engine"
-                            id="noSqlDatabase.engine"
-                            value={this.props.values?.engine}
-                            disabled={this.props.isLocked}
-                          >
-                            <option value="">Please select</option>
-                            {this.getEngineOptions()}
-                          </SaasBoostSelect>
-                          <SaasBoostInput
-                            key="noSqlDatabase.primaryKey"
-                            label="Primary Key"
-                            name="noSqlDatabase.primaryKey"
-                            type="text"
-                            disabled={this.props.isLocked}
-                          />
-                        </Col>
-                      </Row>
-                    )}
-                  </CardBody>
-                </Card>
-              </Col>
-            </Row>
-          </Fragment>
-        );
-      }
-    }
+                  </Col>
+                </Row>
+              )}
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+}

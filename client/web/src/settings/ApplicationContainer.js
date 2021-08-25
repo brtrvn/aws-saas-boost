@@ -124,9 +124,11 @@ export function ApplicationContainer(props) {
         operatingSystem,
         provisionDb,
         provisionFS,
+        provisionNoSql,
         provisionBilling,
         filesystem,
         database,
+        noSqlDatabase,
         billing,
         ...rest
       } = values;
@@ -156,6 +158,7 @@ export function ApplicationContainer(props) {
         ...rest,
         filesystem: provisionFS ? cleanedFs : null,
         database: provisionDb ? cleanedDb : null,
+        noSqlDatabase: provisionNoSql ? noSqlDatabase : null,
         billing: provisionBilling ? billing : null,
         operatingSystem: operatingSystem === 'LINUX' ? 'LINUX' : windowsVersion,
       };

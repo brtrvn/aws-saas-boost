@@ -18,9 +18,12 @@ package com.amazon.aws.partners.saasfactory.saasboost;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 
+import java.util.regex.Pattern;
+
 @JsonDeserialize(builder = NoSqlDatabase.Builder.class)
 public class NoSqlDatabase {
 
+    private static final Pattern DYNAMODB_REGEX = Pattern.compile("[a-zA-Z0-9_\\.-]{3,255}");
     private final String noSqlType;
     private final String primaryKey;
 
@@ -41,6 +44,10 @@ public class NoSqlDatabase {
         return primaryKey;
     }
 
+    public static boolean isValidPrimaryKey(String primaryKey) {
+        return DYNAMODB_REGEX.matcher(primaryKey).matches();
+    }
+
     @JsonPOJOBuilder(withPrefix = "") // setters aren't named with[Property]
     public static final class Builder {
 
@@ -57,6 +64,9 @@ public class NoSqlDatabase {
         }
 
         public Builder primaryKey(String primaryKey) {
+            if (!isValidPrimaryKey(primaryKey)) {
+                throw new IllegalArgumentException("Index names must be between 3 and 255 characters long, and can contain only the following characters: a-z, A-Z, 0-9, _ (underscore), - (dash), and . (dot)");
+            }
             this.primaryKey = primaryKey;
             return this;
         }

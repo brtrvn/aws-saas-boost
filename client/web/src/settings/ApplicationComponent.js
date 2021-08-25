@@ -27,6 +27,7 @@ import FileSystemSubform from './FileSystemSubform';
 import DatabaseSubform from './DatabaseSubform';
 import ContainerSettingsSubform from './ContainerSettingsSubform';
 import BillingSubform from './BillingSubform';
+import NoSqlDatabaseSubform from './NoSqlDatabaseSubform';
 
 import { dismissConfigError, dismissConfigMessage } from './ducks';
 
@@ -135,12 +136,14 @@ export function ApplicationComponent(props) {
       password: db.hasEncryptedPassword ? db.password.substring(0, 8) : db.password,
     },
     filesystem: filesystem,
+    noSqlDatabase: appConfig.noSqlDatabase || { primaryKey: '' },
     billing: appConfig.billing || {
       apiKey: '',
     },
 
     provisionDb: !!appConfig.database,
     provisionFS: !!appConfig.filesystem,
+    provisionNoSql: !!appConfig.noSqlDatabase,
     provisionBilling: !!appConfig.billing,
   };
 
@@ -315,6 +318,10 @@ export function ApplicationComponent(props) {
                   values={formik.values?.database}
                   onFileSelected={(file) => onFileSelected(formik, file)}
                 ></DatabaseSubform>
+                <NoSqlDatabaseSubform
+                  provisionNoSql={formik.values.provisionNoSql}
+                  values={formik.values?.noSqlDatabase}
+                ></NoSqlDatabaseSubform>
                 <BillingSubform
                   provisionBilling={formik.values.provisionBilling}
                   values={formik.values?.billing}

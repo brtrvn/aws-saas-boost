@@ -559,18 +559,20 @@ public class SettingsService implements RequestHandler<Map<String, Object>, APIG
         APIGatewayProxyResponseEvent response = null;
 
         try {
-            AppConfig appConfig = Utils.fromJson((String) event.get("body"), AppConfig.class);
+            String requestBody = (String) event.get("body");
+            AppConfig appConfig = Utils.fromJson(requestBody, AppConfig.class);
             if (appConfig == null) {
+                String message = (Utils.isBlank(requestBody)) ? "Empty request body" : "Error parsing JSON as AppConfig";
                 response = new APIGatewayProxyResponseEvent()
                         .withHeaders(CORS)
                         .withStatusCode(400)
-                        .withBody("{\"message\":\"Empty request body.\"}");
-            } else if (appConfig.getName() == null || appConfig.getName().isEmpty()) {
+                        .withBody("{\"message\":\"" + message + "\"}");
+            } else if (Utils.isBlank(appConfig.getName())) {
                 LOGGER.error("Can't insert application configuration without an app name");
                 response = new APIGatewayProxyResponseEvent()
                         .withHeaders(CORS)
                         .withStatusCode(400)
-                        .withBody("{\"message\":\"Application name is required.\"");
+                        .withBody("{\"message\":\"Application name is required\"");
             } else {
                 // There are some settings which may be set by the installer before this API
                 // is ever called
@@ -600,7 +602,7 @@ public class SettingsService implements RequestHandler<Map<String, Object>, APIG
                         .withBody(Utils.toJson(appConfig));
             }
         } catch (Exception e) {
-            LOGGER.error("Unable to parse incoming JSON");
+            LOGGER.error("Unexpected error", e);
             response = new APIGatewayProxyResponseEvent()
                     .withHeaders(CORS)
                     .withStatusCode(400)
