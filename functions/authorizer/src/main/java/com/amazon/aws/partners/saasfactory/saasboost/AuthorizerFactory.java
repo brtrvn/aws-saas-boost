@@ -31,6 +31,8 @@ public class AuthorizerFactory {
                 return new CognitoAuthorizer();
             case "KEYCLOAK":
                 return new KeycloakAuthorizer();
+            case "AUTH0":
+                return new Auth0Authorizer();
             default:
                 return null;
         }
