@@ -303,16 +303,17 @@ public class SaaSBoostInstall {
 
         String systemIdentityProvider;
         while (true) {
-            System.out.print("Enter the identity provider to use for system users (Cognito or Keycloak) Press Enter for 'Cognito': ");
+            System.out.print("Enter the identity provider to use for system users (Cognito, Keycloak, or Auth0) Press Enter for 'Cognito': ");
             systemIdentityProvider = Keyboard.readString();
             if (isNotBlank(systemIdentityProvider)) {
                 if (systemIdentityProvider.toUpperCase().equals("COGNITO")
-                        || systemIdentityProvider.toUpperCase().equals("KEYCLOAK")) {
+                        || systemIdentityProvider.toUpperCase().equals("KEYCLOAK")
+                        || systemIdentityProvider.toUpperCase().equals("AUTH0")) {
                     systemIdentityProvider = systemIdentityProvider.toUpperCase();
                     LOGGER.info("Setting Identity Provider = [{}]", systemIdentityProvider);
                     break;
                 } else {
-                    outputMessage("Invalid identity provider. Enter either Cognito or Keycloak.");
+                    outputMessage("Invalid identity provider. Enter either Cognito, Keycloak, or Auth0.");
                 }
             } else {
                 systemIdentityProvider = "COGNITO";
@@ -321,12 +322,12 @@ public class SaaSBoostInstall {
             }
         }
 
-        // TODO support custom domains for Cognito hosted UI?
-        // https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-add-custom-domain.html
         String identityProviderCustomDomain = null;
         String identityProviderHostedZone = null;
         String identityProviderCertificate = null;
         if ("KEYCLOAK".equals(systemIdentityProvider)) {
+            // TODO support custom domains for Cognito hosted UI?
+            // https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-add-custom-domain.html
             if ("KEYCLOAK".equals(systemIdentityProvider)) {
                 System.out.println("You must provide a custom domain name with a verified TLS (SSL) certificate to install Keycloak.");
                 System.out.println("You must have an existing Route53 Hosted Zone for the domain name, and DNS resolution must work.");
@@ -402,6 +403,43 @@ public class SaaSBoostInstall {
                     } catch (NullPointerException | IndexOutOfBoundsException e) {
                         outputMessage("Invalid choice, please try again. Enter the number of the certificate to use.");
                     }
+                }
+            }
+        }
+
+        if ("AUTH0".equals(systemIdentityProvider)) {
+            while (true) {
+                System.out.print("Enter the password for Auth0 Management API access: ");
+                String auth0secret = Keyboard.readPassword();
+                if (isNotBlank(auth0secret)) {
+                    String auth0SecretId = "sb-" + envName + "-auth0-admin";
+                    System.out.println("Saving Auth0 credentials to Secrets Manager as " + auth0SecretId);
+                    try {
+                        secretsManager.createSecret(CreateSecretRequest.builder()
+                                .secretString(auth0secret)
+                                .name(auth0SecretId)
+                                .description("Auth0 Management API credentials")
+                                .tags(List.of(
+                                        software.amazon.awssdk.services.secretsmanager.model.Tag.builder()
+                                                .key("Application")
+                                                .value("SaaSBoost")
+                                                .build(),
+                                        software.amazon.awssdk.services.secretsmanager.model.Tag.builder()
+                                                .key("Environment")
+                                                .value(envName)
+                                                .build()
+                                        )
+                                )
+                                .build()
+                        );
+                    } catch (SdkServiceException secretsManagerError) {
+                        LOGGER.error("secretsmanager create-secret error", secretsManagerError);
+                        LOGGER.error(getFullStackTrace(secretsManagerError));
+                        throw secretsManagerError;
+                    }
+                    break;
+                } else {
+                    outputMessage("Invalid Auth0 password, please try again.");
                 }
             }
         }

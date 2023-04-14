@@ -90,7 +90,7 @@ Resources:
     Properties:
       LogGroupName: !Sub /ecs/sb-${Environment}-keycloak
       RetentionInDays: 30
-  KeyCloakTaskExecRole:
+  KeycloakTaskExecRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub sb-${Environment}-keycloak-exec-role-${AWS::Region}
@@ -134,8 +134,8 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource:
-                  - !Ref KeyCloakAdminCredentials
-  KeyCloakTaskRole:
+                  - !Ref KeycloakAdminCredentials
+  KeycloakTaskRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub sb-${Environment}-keycloak-task-role-${AWS::Region}
@@ -149,7 +149,7 @@ Resources:
                 - ecs-tasks.amazonaws.com
             Action:
               - sts:AssumeRole
-  KeyCloakAdminCredentials:
+  KeycloakAdminCredentials:
     Type: AWS::SecretsManager::Secret
     Properties:
       Name: !Sub sb-${Environment}-keycloak-admin
@@ -159,12 +159,12 @@ Resources:
         PasswordLength: 12
         GenerateStringKey: password
         SecretStringTemplate: '{"username": "keycloak"}'
-  KeyCloakTaskDefinition:
+  KeycloakTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family: keycloak
-      ExecutionRoleArn: !GetAtt KeyCloakTaskExecRole.Arn
-      TaskRoleArn: !GetAtt KeyCloakTaskRole.Arn
+      ExecutionRoleArn: !GetAtt KeycloakTaskExecRole.Arn
+      TaskRoleArn: !GetAtt KeycloakTaskRole.Arn
       RequiresCompatibilities:
         - FARGATE
       Memory: '2048'
@@ -201,13 +201,13 @@ Resources:
               Value: JDBC_PING
           Secrets:
             - Name: KEYCLOAK_ADMIN
-              ValueFrom: !Sub '${KeyCloakAdminCredentials}:username::'
+              ValueFrom: !Sub '${KeycloakAdminCredentials}:username::'
             - Name: KEYCLOAK_ADMIN_PASSWORD
-              ValueFrom: !Sub '${KeyCloakAdminCredentials}:password::'
+              ValueFrom: !Sub '${KeycloakAdminCredentials}:password::'
             - Name: KC_DB_USERNAME
-              ValueFrom: !Sub '${KeyCloakAdminCredentials}:username::'
+              ValueFrom: !Sub '${KeycloakAdminCredentials}:username::'
             - Name: KC_DB_PASSWORD
-              ValueFrom: !Sub '${KeyCloakAdminCredentials}:password::'
+              ValueFrom: !Sub '${KeycloakAdminCredentials}:password::'
   KeycloakSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -378,7 +378,7 @@ Resources:
     Properties:
       ServiceName: keycloak
       Cluster: !Ref KeycloakCluster
-      TaskDefinition: !Ref KeyCloakTaskDefinition
+      TaskDefinition: !Ref KeycloakTaskDefinition
       PropagateTags: TASK_DEFINITION
       LaunchType: FARGATE
       DesiredCount: 0
@@ -428,8 +428,8 @@ Resources:
       EngineVersion: 8.0.28
       StorageEncrypted: true
       DBName: keycloak
-      MasterUsername: !Sub '{{resolve:secretsmanager:${KeyCloakAdminCredentials}:SecretString:username}}'
-      MasterUserPassword: !Sub '{{resolve:secretsmanager:${KeyCloakAdminCredentials}:SecretString:password}}'
+      MasterUsername: !Sub '{{resolve:secretsmanager:${KeycloakAdminCredentials}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${KeycloakAdminCredentials}:SecretString:password}}'
       AllocatedStorage: '100'
       StorageType: gp2
   KeycloakCodeBuildRole:
@@ -658,19 +658,19 @@ Resources:
               Configuration:
                 FunctionName: !Ref CloudFormationWaitHandleCallback
                 UserParameters: !Sub '{"waitHandle":"${KeycloakDeployWaitHandle}"}'
-  KeyCloakCodePipelinePermission:
+  KeycloakCodePipelinePermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref CodePipelineUpdateEcsService
       Principal: codepipeline.amazonaws.com
       Action: lambda:InvokeFunction
-  KeyCloakDeployWaitHandlePermission:
+  KeycloakDeployWaitHandlePermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref CloudFormationWaitHandleCallback
       Principal: codepipeline.amazonaws.com
       Action: lambda:InvokeFunction
-  KeyCloakCodePipelineEventRole:
+  KeycloakCodePipelineEventRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub sb-${Environment}-keycloak-event-role-${AWS::Region}
@@ -725,7 +725,7 @@ Resources:
       State: ENABLED
       Targets:
         - Arn: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${KeycloakCodePipeline}
-          RoleArn: !GetAtt KeyCloakCodePipelineEventRole.Arn
+          RoleArn: !GetAtt KeycloakCodePipelineEventRole.Arn
           Id: !Sub sb-${Environment}-keycloak-build
   InvokeStartCodeBuild:
     Type: Custom::CustomResource
@@ -786,7 +786,7 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource:
-                  - !Ref KeyCloakAdminCredentials
+                  - !Ref KeycloakAdminCredentials
                   - !Ref AdminCredentials
   KeycloakSetupLambda:
     Type: AWS::Lambda::Function
@@ -820,7 +820,7 @@ Resources:
     Properties:
       ServiceToken: !GetAtt KeycloakSetupLambda.Arn
       KeycloakHost: !If [HasCustomDomain, !Sub 'https://${CustomDomainName}', !Sub 'http://${KeycloakLoadBalancer.DNSName}']
-      KeycloakCredentials: !Ref KeyCloakAdminCredentials
+      KeycloakCredentials: !Ref KeycloakAdminCredentials
       AdminUserCredentials: !Ref AdminCredentials
       Realm: !Sub sb-${Environment}
       AdminWebAppUrl: !Ref AdminWebUrl
@@ -831,13 +831,16 @@ Outputs:
   KeycloakRealm:
     Description: Configured realm for the Keycloak install
     Value: !GetAtt InvokeKeycloakSetup.KeycloakRealm
-  KeycloakIssuer:
+  OidcIssuer:
     Description: The OIDC issuer for this Keycloak install
     Value: !If
       - HasCustomDomain
       - !Sub https://${CustomDomainName}/realms/${InvokeKeycloakSetup.KeycloakRealm}
       - !Sub http://${KeycloakLoadBalancer.DNSName}/realms/sb-${Environment}
-  KeycloakTokenEndpoint:
+  OidcDomain:
+    Description: The OIDC domain URL (this can be blank because Keycloak supports OIDC end_session_endpoint)
+    Value: ''
+  OidcTokenEndpoint:
     Description: The OIDC token endpoint for this Keycloak install
     Value: !If
       - HasCustomDomain

@@ -41,7 +41,7 @@ Parameters:
     Description: Identity Provider for the SaaS Boost system users and Control Plane API authorization
     Type: String
     Default: COGNITO
-    AllowedValues: [COGNITO, KEYCLOAK]
+    AllowedValues: [COGNITO, KEYCLOAK, AUTH0]
   CognitoUserPoolId:
     Description: User Pool Id for the Cognito Authorizer
     Type: String

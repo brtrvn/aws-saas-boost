@@ -17,6 +17,8 @@ public class SystemUserDataAccessLayerFactory {
                 return new CognitoUserDataAccessLayer();
             case "KEYCLOAK":
                 return new KeycloakUserDataAccessLayer();
+            case "AUTH0":
+                return new Auth0DataAccessLayer();
             default:
                 return null;
         }

@@ -244,7 +244,7 @@ public class KeycloakApi {
                                     // disableableCredentialTypes is parsed by Jackson as an
                                     // ArrayList<String> but stored in UserRepresentation as a Set<String>
                                     setMethod.invoke(keycloakUser, 
-                                            new HashSet<String>((ArrayList<String>) user.get(attributeName)));
+                                            new HashSet<>((ArrayList<String>) user.get(attributeName)));
                                 } else {
                                     setMethod.invoke(keycloakUser, attributeType.cast(user.get(attributeName)));
                                 }

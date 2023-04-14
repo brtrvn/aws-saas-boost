@@ -31,7 +31,7 @@ Parameters:
     Description: Identity Provider for the SaaS Boost system users and control plane API authorization
     Type: String
     Default: COGNITO
-    AllowedValues: [COGNITO, KEYCLOAK]
+    AllowedValues: [COGNITO, KEYCLOAK, AUTH0]
   CognitoUserPoolId:
     Description: Cognito User Pool Id when using Cognito as the identity provider
     Type: String
@@ -44,6 +44,7 @@ Parameters:
 Conditions:
   UseCognito: !Equals [!Ref IdentityProvider, 'COGNITO']
   UseKeycloak: !Equals [!Ref IdentityProvider, 'KEYCLOAK']
+  UseAuth0: !Equals [!Ref IdentityProvider, 'AUTH0']
 Resources:
   SystemUserServiceCognitoPolicy:
     Type: AWS::IAM::ManagedPolicy

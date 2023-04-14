@@ -41,6 +41,16 @@ public class Keyboard {
         return value;
     }
 
+    public static String readPassword() {
+        String value = null;
+        try {
+            value = new String(System.console().readPassword());
+        } catch (Exception exception) {
+            LOGGER.error("Error reading Password data, null value returned.");
+        }
+        return value;
+    }
+
     public static Boolean readBoolean() {
         String token = reader.next();
         String[] trueValues = new String[]{"true", "y", "yes", "1"};
