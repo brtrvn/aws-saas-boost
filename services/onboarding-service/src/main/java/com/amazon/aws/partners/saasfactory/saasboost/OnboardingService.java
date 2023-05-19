@@ -488,6 +488,7 @@ public class OnboardingService {
                     dal.assignCidrBlock(tenantId);
                 } catch (Exception e) {
                     // Unexpected error since we have already validated... but eventual consistency
+                    LOGGER.error(Utils.getFullStackTrace(e));
                     failOnboarding(onboarding.getId(), "Could not assign CIDR for tenant VPC");
                     return;
                 }
@@ -541,13 +542,14 @@ public class OnboardingService {
             if (onboarding != null) {
                 String tenantId = onboarding.getTenantId().toString();
                 Map<String, Object> tenant = (Map<String, Object>) detail.get("tenant");
-                String cidrBlock = dal.getCidrBlock(onboarding.getTenantId());
-                if (Utils.isBlank(cidrBlock)) {
+                Map<String, String> cidr = dal.getCidrBlock(onboarding.getTenantId());
+                if (cidr.isEmpty()) {
                     // TODO rethrow to DLQ?
                     failOnboarding(onboarding.getId(), "Can't find assigned CIDR for tenant " + tenantId);
                     return;
                 }
-                String cidrPrefix = cidrBlock.substring(0, cidrBlock.indexOf(".", cidrBlock.indexOf(".") + 1));
+                String cidrBlock = cidr.get("cidr");
+                String transitGateway = cidr.get("transitGateway");
 
                 // Make a synchronous call to the settings service for the app config
                 Map<String, Object> appConfig = getAppConfig(context);
@@ -585,7 +587,8 @@ public class OnboardingService {
                 templateParameters.add(Parameter.builder().parameterKey("SSLCertificateArn").parameterValue(sslCertificateArn).build());
                 templateParameters.add(Parameter.builder().parameterKey("TenantId").parameterValue(tenantId).build());
                 templateParameters.add(Parameter.builder().parameterKey("TenantSubDomain").parameterValue(tenantSubdomain).build());
-                templateParameters.add(Parameter.builder().parameterKey("CidrPrefix").parameterValue(cidrPrefix).build());
+                templateParameters.add(Parameter.builder().parameterKey("CidrBlock").parameterValue(cidrBlock).build());
+                templateParameters.add(Parameter.builder().parameterKey("TransitGateway").parameterValue(transitGateway).build());
                 templateParameters.add(Parameter.builder().parameterKey("Tier").parameterValue(tier).build());
                 templateParameters.add(Parameter.builder().parameterKey("DeployActiveDirectory")
                         .parameterValue(deployActiveDirectory.toString()).build());
@@ -1387,6 +1390,7 @@ public class OnboardingService {
                 failOnboarding(onboardingId, "Onboarding can't be validated when in state "
                         + onboarding.getStatus());
             } else {
+                LOGGER.info("Validating images exist in ECR");
                 Map<String, Object> appConfig = getAppConfig(context);
                 // Check to see if there are any images in the ECR repo before allowing onboarding
                 Map<String, Object> services = (Map<String, Object>) appConfig.get("services");
@@ -1448,6 +1452,7 @@ public class OnboardingService {
                         continue;
                     }
 
+                    LOGGER.info("Validating available CIDR blocks for a new VPC");
                     // Do we have any CIDR blocks left for a new tenant VPC
                     if (!dal.availableCidrBlock()) {
                         LOGGER.error("No CIDR blocks available for new VPC");
@@ -1459,6 +1464,7 @@ public class OnboardingService {
                     // Make sure we're using a unique subdomain per tenant
                     String subdomain = onboardingRequest.getSubdomain();
                     if (Utils.isNotBlank(subdomain)) {
+                        LOGGER.info("Validating unique tenant subdomain");
                         String hostedZoneId = (String) appConfig.get("hostedZone");
                         String domainName = (String) appConfig.get("domainName");
                         if (Utils.isBlank(hostedZoneId) || Utils.isBlank(domainName)) {
@@ -1505,9 +1511,12 @@ public class OnboardingService {
                                 continue;
                             }
                         }
+                    } else {
+                        LOGGER.info("Skipping validation of tenant subdomain. No domain configured.");
                     }
 
                     // Check if Quotas will be exceeded.
+                    LOGGER.info("Validating service quotas will not be exceeded");
                     try {
                         Map<String, Object> retMap = checkLimits(context);
                         Boolean passed = (Boolean) retMap.get("passed");
@@ -2218,8 +2227,8 @@ public class OnboardingService {
                                 .resource("settings?" + queryParams.toString())
                                 .method("GET")
                                 .build()
-                )
-                ,API_TRUST_ROLE,
+                ),
+                API_TRUST_ROLE,
                 context.getAwsRequestId()
         );
         List<Map<String, String>> settingsList = Utils.fromJson(getSettingsResponseBody, ArrayList.class);

@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
 public class OnboardingServiceDAL {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OnboardingServiceDAL.class);
+    private static final String SAAS_BOOST_ENV = System.getenv("SAAS_BOOST_ENV");
     private static final String ONBOARDING_TABLE = System.getenv("ONBOARDING_TABLE");
     private static final String CIDR_BLOCK_TABLE = System.getenv("CIDR_BLOCK_TABLE");
     private final DynamoDbClient ddb;
@@ -211,23 +212,28 @@ public class OnboardingServiceDAL {
         return onboarding;
     }
 
-    public String getCidrBlock(UUID tenantId) {
+    public Map<String, String> getCidrBlock(UUID tenantId) {
         return getCidrBlock(tenantId.toString());
     }
 
-    public String getCidrBlock(String tenantId) {
+    public Map<String, String> getCidrBlock(String tenantId) {
         if (Utils.isBlank(CIDR_BLOCK_TABLE)) {
             throw new IllegalStateException("Missing required environment variable CIDR_BLOCK_TABLE");
         }
-        String cidrBlock = null;
+        Map<String, String> cidrBlock = new HashMap<>();
         try {
-            ScanResponse scan = ddb.scan(r -> r.tableName(CIDR_BLOCK_TABLE));
-            if (!scan.items().isEmpty()) {
-                for (Map<String, AttributeValue> item : scan.items()) {
-                    if (item.containsKey("tenant_id") && item.get("tenant_id").s().equals(tenantId)) {
-                        cidrBlock = item.get("cidr_block").s();
-                    }
-                }
+            QueryResponse query = ddb.query(request -> request
+                    .tableName(CIDR_BLOCK_TABLE)
+                    .indexName(CIDR_BLOCK_TABLE + "-by-tenant")
+                    .keyConditionExpression("tenant_id = :tenant_id")
+                    .expressionAttributeValues(Map.of(
+                            ":tenant_id",
+                            AttributeValue.builder().s(tenantId).build()
+                    ))
+            );
+            if (query.hasItems() && !query.items().isEmpty()) {
+                cidrBlock.put("cidr", query.items().get(0).get("cidr_block").s());
+                cidrBlock.put("transitGateway", query.items().get(0).get("transit_gateway").s());
             }
         } catch (DynamoDbException ddbError) {
             LOGGER.error("dynamodb:Scan error", ddbError);
@@ -242,20 +248,11 @@ public class OnboardingServiceDAL {
     }
 
     public boolean availableCidrBlock() {
-        if (Utils.isBlank(CIDR_BLOCK_TABLE)) {
-            throw new IllegalStateException("Missing required environment variable CIDR_BLOCK_TABLE");
-        }
-        boolean available;
-        try {
-            ScanResponse scan = ddb.scan(r -> r
-                    .tableName(CIDR_BLOCK_TABLE)
-                    .filterExpression("attribute_not_exists(tenant_id)")
-            );
-            available = scan.hasItems() && !scan.items().isEmpty();
-        } catch (DynamoDbException ddbError) {
-            LOGGER.error("dynamodb:Scan error", ddbError);
-            LOGGER.error(Utils.getFullStackTrace(ddbError));
-            throw ddbError;
+        List<Map<String, String>> cidrBlocks = getAvailableCidrBlocks("A");
+        boolean available = !cidrBlocks.isEmpty();
+        if (!available) {
+            cidrBlocks = getAvailableCidrBlocks("B");
+            available = !cidrBlocks.isEmpty();
         }
         return available;
     }
@@ -266,38 +263,32 @@ public class OnboardingServiceDAL {
         }
         String cidrBlock;
         try {
-            long scanStartTimeMillis = System.currentTimeMillis();
-            List<String> availableCidrBlocks = new ArrayList<>();
-            ScanResponse fullScan = ddb.scan(r -> r.tableName(CIDR_BLOCK_TABLE));
-            if (!fullScan.items().isEmpty()) {
-                for (Map<String, AttributeValue> item : fullScan.items()) {
-                    // Make sure we're not trying to assign a CIDR block to a tenant that already has one
-                    if (item.containsKey("tenant_id") && tenantId.equals(item.get("tenant_id").s())) {
-                        throw new RuntimeException("CIDR block already assigned for tenant " + tenantId);
-                    }
-                    if (!item.containsKey("tenant_id")) {
-                        availableCidrBlocks.add(item.get("cidr_block").s());
-                    }
-                }
-                // Make sure we have an open CIDR block left to assign
-                if (availableCidrBlocks.isEmpty()) {
-                    throw new RuntimeException("No remaining CIDR blocks");
-                }
+            final long scanStartTimeMillis = System.currentTimeMillis();
+            if (!availableCidrBlock()) {
+                throw new RuntimeException("No remaining CIDR blocks");
+            }
+            if (!getCidrBlock(tenantId).isEmpty()) {
+                throw new RuntimeException("CIDR block already assigned for tenant " + tenantId);
+            }
+            List<Map<String, String>> availableCidrBlocks = getAvailableCidrBlocks("A");
+            if (availableCidrBlocks.isEmpty()) {
+                availableCidrBlocks = getAvailableCidrBlocks("B");
             }
             long scanTotalTimeMillis = System.currentTimeMillis() - scanStartTimeMillis;
             LOGGER.info("OnboardingServiceDAL::assignCidrBlock scan " + scanTotalTimeMillis);
 
-            long updateStartTimeMillis = System.currentTimeMillis();
-            String cidr = availableCidrBlocks.get((int) (Math.random() * availableCidrBlocks.size()));
+            final long updateStartTimeMillis = System.currentTimeMillis();
+            Map<String, String> cidr = availableCidrBlocks.get((int) (Math.random() * availableCidrBlocks.size()));
             // Claim this one for this tenant
-            Map<String, AttributeValue> key = new HashMap<>();
-            key.put("cidr_block", AttributeValue.builder().s(cidr).build());
-            UpdateItemResponse update = ddb.updateItem(r -> r
+            UpdateItemResponse update = ddb.updateItem(request -> request
                     .tableName(CIDR_BLOCK_TABLE)
-                    .key(key)
+                    .key(Map.of(
+                            "transit_gateway", AttributeValue.builder().s(cidr.get("transit_gateway")).build(),
+                            "cidr_block", AttributeValue.builder().s(cidr.get("cidr_block")).build())
+                    )
                     .updateExpression("SET tenant_id = :tenantId")
                     .expressionAttributeValues(
-                            Collections.singletonMap(":tenantId", AttributeValue.builder().s(tenantId).build())
+                            Map.of(":tenantId", AttributeValue.builder().s(tenantId).build())
                     )
                     .conditionExpression("attribute_not_exists(tenant_id)")
                     .returnValues(ReturnValue.ALL_NEW)
@@ -312,6 +303,44 @@ public class OnboardingServiceDAL {
         }
 
         return cidrBlock;
+    }
+
+    protected List<Map<String, String>> getAvailableCidrBlocks(String transitGateway) {
+        if (Utils.isBlank(CIDR_BLOCK_TABLE)) {
+            throw new IllegalStateException("Missing required environment variable CIDR_BLOCK_TABLE");
+        }
+        List<Map<String, String>> cidrBlocks = new ArrayList();
+        try {
+            QueryResponse query = ddb.query(request -> request
+                    .tableName(CIDR_BLOCK_TABLE)
+                    .keyConditionExpression("#transit_gateway = :transit_gateway"
+                            + " AND begins_with(#cidr_block, :cidr_block)")
+                    .filterExpression("attribute_not_exists(#tenant_id)")
+                    .expressionAttributeNames(Map.of(
+                            "#transit_gateway", "transit_gateway",
+                            "#cidr_block", "cidr_block",
+                            "#tenant_id", "tenant_id")
+                    )
+                    .expressionAttributeValues(Map.of(
+                            ":transit_gateway", AttributeValue.builder().s(transitGateway).build(),
+                            ":cidr_block",  AttributeValue.builder().s("10.").build())
+                    )
+            );
+            if (query.hasItems()) {
+                cidrBlocks.addAll(query.items().stream()
+                        .map(item -> item.entrySet().stream()
+                                .collect(Collectors.toMap(
+                                        entry -> entry.getKey(),
+                                        entry -> entry.getValue().s())))
+                        .collect(Collectors.toList())
+                );
+            }
+        } catch (DynamoDbException ddbError) {
+            LOGGER.error("dynamodb:Scan error", ddbError);
+            LOGGER.error(Utils.getFullStackTrace(ddbError));
+            throw ddbError;
+        }
+        return cidrBlocks;
     }
 
     public static Map<String, AttributeValue> toAttributeValueMap(Onboarding onboarding) {

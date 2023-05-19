@@ -34,9 +34,13 @@ Parameters:
   TenantSubDomain:
     Description: The subdomain for this tenant
     Type: String
-  CidrPrefix:
-    Description: Prefix of Cidr for this tenant such as 10.1, 10.2 etc.
+  CidrBlock:
+    Description: The /21 CIDR for this tenant's VPC
     Type: String
+  TransitGateway:
+    Description: Which Egress VPC Transit Gateway for this tenant's VPC
+    Type: String
+    Default: A
   Tier:
     Description: The tier this tenant is onboading into
     Type: String
@@ -67,7 +71,7 @@ Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: !Sub ${CidrPrefix}.0.0/16
+      CidrBlock: !Sub ${CidrBlock}/21
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
@@ -121,7 +125,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: !Sub ${CidrPrefix}.32.0/19
+      CidrBlock: !Select [0, !Cidr [!GetAtt VPC.CidrBlock, 4, 9]]
       Tags:
         - Key: Tenant
           Value: !Ref TenantId
@@ -140,7 +144,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [1, !GetAZs '']
-      CidrBlock: !Sub ${CidrPrefix}.96.0/19
+      CidrBlock: !Select [1, !Cidr [!GetAtt VPC.CidrBlock, 4, 9]]
       Tags:
         - Key: Tenant
           Value: !Ref TenantId
@@ -159,7 +163,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: !Sub ${CidrPrefix}.0.0/19
+      CidrBlock: !Select [2, !Cidr [!GetAtt VPC.CidrBlock, 4, 9]]
       Tags:
         - Key: Tenant
           Value: !Ref TenantId
@@ -173,7 +177,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [1, !GetAZs '']
-      CidrBlock: !Sub ${CidrPrefix}.64.0/19
+      CidrBlock: !Select [3, !Cidr [!GetAtt VPC.CidrBlock, 4, 9]]
       Tags:
         - Key: Tenant
           Value: !Ref TenantId
@@ -205,7 +209,7 @@ Resources:
       SubnetId: !Ref SubnetPrivateB
       RouteTableId: !Ref RouteTablePrivate
   # Attach tenant VPC to TGW
-  TenantTGWAttachment:
+  TransitGatewayAttachment:
     Type: AWS::EC2::TransitGatewayAttachment
     Properties:
       SubnetIds:
@@ -221,32 +225,31 @@ Resources:
         - Key: Tier
           Value: !Ref Tier
       TransitGatewayId:
-        Fn::Join: ['', ['{{resolve:ssm:/saas-boost/', !Ref Environment, '/TRANSIT_GATEWAY}}']]
+        Fn::Join: ['', ['{{resolve:ssm:/saas-boost/', !Ref Environment, '/TRANSIT_GATEWAY_', !Ref TransitGateway, '}}']]
       VpcId: !Ref VPC
   # Add the route from the egress VPC back to this tenant's CIDR range and attachment
-  TenantRoute:
+  TransitGatewayRoute:
     Type: AWS::EC2::TransitGatewayRoute
     Properties:
-      DestinationCidrBlock: !Sub ${CidrPrefix}.0.0/16
-      TransitGatewayAttachmentId: !Ref TenantTGWAttachment
+      DestinationCidrBlock: !GetAtt VPC.CidrBlock
+      TransitGatewayAttachmentId: !Ref TransitGatewayAttachment
       TransitGatewayRouteTableId:
         Fn::Join: ['', ['{{resolve:ssm:/saas-boost/', !Ref Environment, '/EGRESS_ROUTE_TABLE}}']]
-  # Associate the route table to this tenant's TGW Attachment
-  TenantVpcTgwAssociation:
+  TransitGatewayRouteAssociation:
     Type: AWS::EC2::TransitGatewayRouteTableAssociation
     Properties:
-      TransitGatewayAttachmentId: !Ref TenantTGWAttachment
+      TransitGatewayAttachmentId: !Ref TransitGatewayAttachment
       TransitGatewayRouteTableId:
         Fn::Join: ['', ['{{resolve:ssm:/saas-boost/', !Ref Environment, '/TRANSIT_GATEWAY_ROUTE_TABLE}}']]
-  # Update VPC route tables to point towards transit gateway for appropriate target CIDR ranges
-  UpdateRouteTable:
+  # Route outbound VPC traffic through the transit gateway
+  EgressRouteToTransitGateway:
     Type: AWS::EC2::Route
-    DependsOn: TenantTGWAttachment
+    DependsOn: TransitGatewayAttachment
     Properties:
       RouteTableId: !Ref RouteTablePrivate
       DestinationCidrBlock: 0.0.0.0/0
       TransitGatewayId:
-        Fn::Join: ['', ['{{resolve:ssm:/saas-boost/', !Ref Environment, '/TRANSIT_GATEWAY}}']]
+        Fn::Join: ['', ['{{resolve:ssm:/saas-boost/', !Ref Environment, '/TRANSIT_GATEWAY_', !Ref TransitGateway, '}}']]
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:

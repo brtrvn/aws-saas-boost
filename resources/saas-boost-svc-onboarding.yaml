@@ -67,14 +67,30 @@ Resources:
     Properties:
       TableName: !Sub sb-${Environment}-cidr-mapping
       AttributeDefinitions:
+        - AttributeName: transit_gateway
+          AttributeType: S
         - AttributeName: cidr_block
           AttributeType: S
+        - AttributeName: tenant_id
+          AttributeType: S
       KeySchema:
-        - AttributeName: cidr_block
+        - AttributeName: transit_gateway
           KeyType: HASH
+        - AttributeName: cidr_block
+          KeyType: RANGE
       ProvisionedThroughput:
-        ReadCapacityUnits: 5
+        ReadCapacityUnits: 10
         WriteCapacityUnits: 5
+      GlobalSecondaryIndexes:
+        - IndexName: !Sub sb-${Environment}-cidr-mapping-by-tenant
+          KeySchema:
+            - AttributeName: tenant_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
       Tags:
         - Key: SaaS Boost
           Value: !Ref Environment
@@ -186,6 +202,8 @@ Resources:
                 Action:
                   - dynamodb:Scan
                   - dynamodb:BatchWriteItem
+                  - dynamodb:UpdateTable
+                  - dynamodb:DescribeTable
                 Resource:
                   - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CidrBlockTable}
   PopulateDynamoDBLogs:
@@ -200,7 +218,7 @@ Resources:
       FunctionName: !Sub sb-${Environment}-populate-ddb
       Role: !GetAtt PopulateDynamoDBExecRole.Arn
       Runtime: java11
-      Timeout: 60
+      Timeout: 600
       MemorySize: 512
       Handler: com.amazon.aws.partners.saasfactory.saasboost.CidrDynamoDB
       Layers:
@@ -249,6 +267,7 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${OnboardingTable}
               - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CidrBlockTable}
+              - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CidrBlockTable}/index/${CidrBlockTable}-by-tenant
           - Effect: Allow
             Action:
               - s3:ListBucket

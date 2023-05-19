@@ -16,9 +16,6 @@
 
 package com.amazon.aws.partners.saasfactory.saasboost;
 
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
@@ -30,15 +27,33 @@ public class CidrDynamoDBTest {
 
     @Test
     public void testGenerateBatches() {
+        List<String> expected = new ArrayList<>();
+        for (int octet = 0; octet < 256; octet++) {
+            for (int slash21 = 0; slash21 < 256; slash21 +=8) {
+               expected.add(String.format("10.%d.%d.0", octet, slash21));
+            }
+        }
+        assertEquals("256 /21 VPCs = 8192 VPCs", 8192, expected.size());
         List<List<WriteRequest>> batches = CidrDynamoDB.generateBatches();
-        // Max batch write size for DynamoDB is 25 and we're batching up 256 items
-        // We should have 11 batches total
-        assertEquals(11, batches.size());
-        // The first 10 batches should be filled to the limit
-        for (int i = 0; i < 10; i++) {
+
+        int vpc = 0;
+        for (int i = 0; i < batches.size(); i++) {
+            List<WriteRequest> batch = batches.get(i);
+            for (int b = 0; b < batch.size(); b++) {
+                String cidr = batch.get(b).putRequest().item().get("cidr_block").s();
+                assertEquals("Batch " + i + " batch size " + batch.size()
+                        + " expected index " + vpc + " batch item " + b, expected.get(vpc++), cidr);
+            }
+        }
+
+        // We should have 8192 / 25 (328 batches)
+        assertEquals(Math.round(expected.size() / 25.0d), batches.size(), 0.0d);
+
+        // All but the final batch should be filled to the limit
+        for (int i = 0; i < (batches.size() - 1); i++) {
             assertEquals(25, batches.get(i).size());
         }
-        // and one remainder batch of 6
-        assertEquals(6, batches.get(10).size());
+        // and one remainder batch
+        assertEquals(expected.size() % 25.0d, batches.get((batches.size() - 1)).size(), 0.0d);
     }
 }

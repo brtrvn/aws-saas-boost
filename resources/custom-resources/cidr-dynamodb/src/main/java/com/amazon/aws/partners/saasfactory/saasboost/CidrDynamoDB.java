@@ -57,16 +57,66 @@ public class CidrDynamoDB implements RequestHandler<Map<String, Object>, Object>
                             LOGGER.info("CIDR table {} is already populated with {} items", table, scan.count());
                         } else {
                             LOGGER.info("Populating CIDR table");
+                            LOGGER.debug("Increasing WCU for data import");
+                            ddb.updateTable(request -> request
+                                    .tableName(table)
+                                    .provisionedThroughput(
+                                            ProvisionedThroughput.builder()
+                                                    .writeCapacityUnits(2000L)
+                                                    .readCapacityUnits(10L)
+                                                    .build()
+                                    )
+                            );
+                            ddb.waiter().waitUntilTableExists(request -> request.tableName(table));
+                            LOGGER.debug("Updated provisioned capacity");
+
                             List<List<WriteRequest>> batches = generateBatches();
+                            final int maxRetries = 10;
+                            //int batchWrite = 0;
+                            //final long startTimeMillis = System.currentTimeMillis();
                             for (List<WriteRequest> batch : batches) {
                                 try {
-                                    ddb.batchWriteItem(request -> request.requestItems(Map.of(table, batch)));
+                                    long batchTimeMillis = System.currentTimeMillis();
+                                    BatchWriteItemResponse writeResponse = ddb.batchWriteItem(request -> request
+                                            .requestItems(Map.of(table, batch))
+                                    );
+                                    //long batchTotalTimeMillis = System.currentTimeMillis() - batchTimeMillis;
+                                    //long cumulativeTimeMillis = System.currentTimeMillis() - startTimeMillis;
+                                    //LOGGER.debug("BatchWriteItem {}/{} {} {}", ++batchWrite, batches.size(),
+                                    //        batchTotalTimeMillis, cumulativeTimeMillis);
+
+                                    Map<String, List<WriteRequest>> unprocessed = writeResponse.unprocessedItems();
+                                    int retries = 0;
+                                    while (!unprocessed.isEmpty() && retries < maxRetries) {
+                                        LOGGER.warn("{} Unprocessed items in batch!", unprocessed.values().size());
+                                        try {
+                                            Thread.sleep((long) (Math.pow(2, ++retries) * 10));
+                                        } catch (InterruptedException cantSleep) {
+                                            LOGGER.error("Unable to pause thread!");
+                                            Thread.currentThread().interrupt();
+                                        }
+                                        BatchWriteItemResponse unprocessedResponse = ddb.batchWriteItem(
+                                                BatchWriteItemRequest.builder().requestItems(unprocessed).build());
+                                        if (unprocessedResponse.hasUnprocessedItems()) {
+                                            unprocessed = unprocessedResponse.unprocessedItems();
+                                        }
+                                    }
                                 } catch (DynamoDbException e) {
                                     LOGGER.error(Utils.getFullStackTrace(e));
                                     responseData.put("Reason", e.awsErrorDetails().errorMessage());
                                     CloudFormationResponse.send(event, context, "FAILED", responseData);
                                 }
                             }
+                            LOGGER.debug("Resetting provisioned capacity");
+                            ddb.updateTable(request -> request
+                                    .tableName(table)
+                                    .provisionedThroughput(
+                                            ProvisionedThroughput.builder()
+                                                    .writeCapacityUnits(5L)
+                                                    .readCapacityUnits(10L)
+                                                    .build()
+                                    )
+                            );
                         }
                         CloudFormationResponse.send(event, context, "SUCCESS", responseData);
                     } catch (DynamoDbException e) {
@@ -99,24 +149,44 @@ public class CidrDynamoDB implements RequestHandler<Map<String, Object>, Object>
     }
 
     protected static List<List<WriteRequest>> generateBatches() {
+        // DynamoDB limits batch writes to 25 items per batch
         final int batchWriteItemLimit = 25;
-        final int maxOctet = 255;
+
+        // IPv4
+        final long maxOctet = Math.round(Math.pow(2, 8));
+
+        // Breaking apart a /16 network into /21 per tenant which
+        // gives you 32 blocks per octet (10.0, 10.1, 10.2, 10.3 etc...)
+        final long maxVpcs = maxOctet * (Math.round(Math.pow(2, 16) / Math.pow(2, 11)));
+
+        // You can only attach 5000 VPCs per Transit Gateway
+        // We'll allocate 1/2 of the 8192 total VPCs to one and 1/2 to another
+        final long vpcsPerTransitGateway = maxVpcs / 2;
+
+        int vpc = 0;
         int octet = -1;
         List<List<WriteRequest>> batches = new ArrayList<>();
         List<WriteRequest> batch = new ArrayList<>();
-        while (octet <= maxOctet) {
+        while (vpc <= maxVpcs) {
             octet++;
-            if (batch.size() == batchWriteItemLimit || octet > maxOctet) {
-                batches.add(new ArrayList<>(batch)); // shallow copy is ok here
-                batch.clear(); // clear out our working batch so we can fill it up again to the limit
+            for (int slash21 = 0; slash21 < maxOctet && vpc <= maxVpcs; slash21 += 8) {
+                if (batch.size() == batchWriteItemLimit || vpc == maxVpcs) {
+                    batches.add(new ArrayList<>(batch)); // shallow copy is ok here
+                    batch.clear(); // clear out our working batch so we can fill it up again to the limit
+                }
+                vpc++;
+                String cidr = String.format("10.%d.%d.0", octet, slash21);
+                String transitGateway = vpc <= vpcsPerTransitGateway ? "A" : "B";
+                WriteRequest putRequest = WriteRequest.builder()
+                        .putRequest(PutRequest.builder()
+                                .item(Map.of(
+                                        "cidr_block", AttributeValue.builder().s(cidr).build(),
+                                        "transit_gateway", AttributeValue.builder().s(transitGateway).build()
+                                ))
+                                .build())
+                        .build();
+                batch.add(putRequest);
             }
-            String cidr = String.format("10.%d.0.0", octet);
-            WriteRequest putRequest = WriteRequest.builder()
-                    .putRequest(PutRequest.builder()
-                            .item(Map.of("cidr_block", AttributeValue.builder().s(cidr).build()))
-                            .build())
-                    .build();
-            batch.add(putRequest);
         }
         return batches;
     }

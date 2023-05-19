@@ -261,16 +261,16 @@ Resources:
        # This is to route to Tenant VPCs through egress TGW
        DestinationCidrBlock: 10.0.0.0/8
        TransitGatewayId: !Ref TransitGateway
-  SSMParamTransitGateway:
+  SSMParamTransitGatewayA:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub /saas-boost/${Environment}/TRANSIT_GATEWAY
+      Name: !Sub /saas-boost/${Environment}/TRANSIT_GATEWAY_A
       Type: String
       Value: !Ref TransitGateway
-  SSMParamTransitGatewayRouteTable:
+  SSMParamTransitGatewayARouteTable:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub /saas-boost/${Environment}/TRANSIT_GATEWAY_ROUTE_TABLE
+      Name: !Sub /saas-boost/${Environment}/TRANSIT_GATEWAY_A_ROUTE_TABLE
       Type: String
       Value: !Ref TenantTransitGatewayRouteTable
   SSMParamEgressRouteTable:
